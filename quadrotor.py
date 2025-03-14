@@ -2,13 +2,54 @@ import numpy as np
 from scipy.linalg import expm
 from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.pyplot as plt
+from lqr_control import LQRControl
+from control import dlqr    
+import cvxpy as cp
 
 
 def discretize(A, B, Ts):
-    A_d = expm(A * Ts)
-    B_d = np.linalg.pinv(A) @ (A_d - np.eye(A_d.shape[0])) @ B
+
+    n = A.shape[0]
+    p = B.shape[1]
+    
+    M = np.zeros((n + p, n + p))
+    M[:n, :n] = A
+    M[:n, n:] = B
+    M[n:, n:] = np.zeros((p, p))
+    
+    M_d = expm(M * Ts)
+    
+    A_d = M_d[:n, :n]
+    B_d = M_d[:n, n:]
+    
     return A_d, B_d
 
+
+def mpc(A,B,N,x0,x_ref,u_ref,Q,R):
+
+    cost = 0.0
+    constraints = []
+
+    x = cp.Variable((12, N + 1)) # cp.Variable((dim_1, dim_2))
+    u = cp.Variable((4, N))
+
+    Q = np.array(Q)
+    R = np.array(R)
+
+    for k in range(N):
+        cost += cp.quad_form(x[:, k] - x_ref, Q)
+        cost += cp.quad_form(u[:, k], R)
+        constraints += [x[:, k+1] == A @ x[:, k] + B @ u[:, k]]
+
+    constraints += [x[:, 0] == x0] 
+    problem = cp.Problem(cp.Minimize(cost),constraints)
+    problem.solve(solver=cp.OSQP)
+
+    return u[:, 0].value, x[:, 1].value, x[:, :].value, None
+
+
+
+N = 1000
 
 g = 9.81 #m/s^2
 Ix = 1
@@ -35,31 +76,28 @@ B[9,1] = 1/Ix
 B[10,2] = 1/Iy
 B[11,3] = 1/Iz
 
-print(A)
 
 Ad,Bd = discretize(A,B,Ts=0.1)
+
+
+
+Q = np.eye(Ad.shape[0])
+R = np.eye(Bd.shape[1])
+K = dlqr(Ad, Bd, Q, R)[0]
 
 #print(Ad)
 #print(Bd)
 
-x0 = np.zeros(12).T
-x = np.zeros((100,12))
+x0 = np.zeros(12)
 
-x[0] = x0
+x_ref = np.array([5.0,5.0,5.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0])
+u_ref = np.zeros(4)
 
-t = np.linspace(0,1,99)
+u_0, x_1, x_traj, _ = mpc(Ad, Bd, N, x0, x_ref, u_ref,Q,R)
 
-u = np.array([m*g,0,0,0])
-
-for i in range(t.shape[0]):
-    x[i+1] = Ad @ x[i] + Bd @ u
-    
-    
-
-
-x_pos = x[:, 0]  
-y_pos = x[:, 1]  
-z_pos = x[:, 2]  
+x_pos = x_traj[0, :]  
+y_pos = x_traj[1, :]  
+z_pos = x_traj[2, :]  
 
 fig = plt.figure()
 ax = fig.add_subplot(111, projection='3d')
@@ -74,3 +112,4 @@ ax.set_title('3D Position Trajectory')
 
 
 plt.show()
+
