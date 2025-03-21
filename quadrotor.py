@@ -3,7 +3,8 @@ from scipy.linalg import expm
 from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.pyplot as plt
 from lqr_control import LQRControl
-from control import dlqr    
+from control import dlqr  
+from scipy.linalg import solve_discrete_are,eigh
 import cvxpy as cp
 
 
@@ -23,6 +24,30 @@ def discretize(A, B, Ts):
     B_d = M_d[:n, n:]
     
     return A_d, B_d
+
+def terminal_set(P,K,c):
+
+    stable = True
+
+    eigenvalues, eigenvectors = eigh(P)
+    axes_length = np.sqrt(c/eigenvalues)
+
+    corners = []
+    sign_combinations = np.array(np.meshgrid(*[[-1, 1]] * len(axes_length))).T.reshape(-1, len(axes_length))
+
+    corners = sign_combinations * axes_length
+
+    corners = corners @ eigenvectors.T
+
+    for corner in corners:
+        if not np.linalg.norm(K@corner) <= 0.5:
+            pstable = False
+
+    if stable:
+        print("System is Stable")
+    else:
+        print("System is Unstable")
+
 
 
 def mpc(A,B,N,x0,x_ref,u_ref,Q,R):
@@ -83,10 +108,14 @@ Ad,Bd = discretize(A,B,Ts=0.1)
 
 Q = np.eye(Ad.shape[0])
 R = np.eye(Bd.shape[1])
-K = dlqr(Ad, Bd, Q, R)[0]
+# K = dlqr(Ad, Bd, Q, R)[0]
 
-#print(Ad)
-#print(Bd)
+
+P = solve_discrete_are(A,B,Q,R)
+K = np.linalg.inv(R + B.T @ P @ B) @ (B.T @ P @ A)
+
+
+terminal_set(P,K,5)
 
 x0 = np.zeros(12)
 
