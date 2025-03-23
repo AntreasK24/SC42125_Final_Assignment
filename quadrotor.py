@@ -1,3 +1,5 @@
+# dynamics from the paper DroneMPC Papers/Quadcopter Modeling with LQR.pdf - Quadcopter Modeling and Linear Quadratic Regulator Design Using Simulink
+
 import numpy as np
 from scipy.linalg import expm
 from mpl_toolkits.mplot3d import Axes3D
@@ -41,14 +43,12 @@ def terminal_set(P,K,c):
 
     for corner in corners:
         if not np.linalg.norm(K@corner) <= 0.5:
-            pstable = False
+            stable = False
 
     if stable:
         print("System is Stable")
     else:
         print("System is Unstable")
-
-
 
 def mpc(A,B,N,x0,x_ref,u_ref,Q,R):
 
@@ -74,7 +74,7 @@ def mpc(A,B,N,x0,x_ref,u_ref,Q,R):
 
 
 
-N = 1000
+N = 20
 
 g = 9.81 #m/s^2
 Ix = 1
