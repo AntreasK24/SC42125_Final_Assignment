@@ -8,6 +8,7 @@ from lqr_control import LQRControl
 from control import dlqr  
 from scipy.linalg import solve_discrete_are,eigh
 import cvxpy as cp
+import yaml
 
 
 def discretize(A, B, Ts):
@@ -95,12 +96,15 @@ def dynamics(xk,uk):
 N = 6
 Ts = 0.05
 
-g = 9.81 #m/s^2
-Ix = 3.3e-3 #kg m^2
-Iy = 3.3e-3 #kg m^2
-Iz = 5.8e-3 #kg m^2
+# Load parameters from quadrotor.yaml
+with open('quadrotor.yaml', 'r') as file:
+    params = yaml.safe_load(file)
 
-m = 0.547 #kg
+g = params['g']  # m/s^2
+Ix = params['Ix']  # kg m^2
+Iy = params['Iy']  # kg m^2
+Iz = params['Iz']  # kg m^2
+m = params['m']  # kg
 # L = 0.17 #m
 # kF = 1.5e-7 #N RPM^-2
 # kM = 3.75e-7 #Nm RPM^-2
@@ -159,9 +163,9 @@ terminal_set(P,K,5)
 
 x0 = np.zeros(dim_x)
 
-x_ref = np.array([5.0,5.0,5.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0])
-#u_ref = np.zeros(dim_u)
-u_ref = np.array([m*g,0.0,0.0,0.0])
+
+xref = np.load("trajectories/xr_opt.npy",allow_pickle=True)
+uref = np.load("trajectories/ur_opt.npy",allow_pickle=True)
 
 # Simulation
 N_sim = 100
