@@ -58,14 +58,16 @@ R = np.eye(B.shape[1]) * 1
 Ts = 0.01
 Ad, Bd = discretize(A, B, Ts)
 
+
+
 # Create an instance of the OptimalTargetSelection class
-target_selector = OptimalTargetSelection.OptimalTargetSelection(Ad, Bd, C, Q, R,m)
+target_selector = OptimalTargetSelection.OptimalTargetSelection(Ad, Bd, C, Q, R,m,"circle")
 
 # Example usage of the class
 x0 = np.zeros((Ad.shape[0], 1))  # Initial state
 
 target_selector.trajectory_gen()
 
-xr = np.load("xr_opt.npy",allow_pickle=True)
-ur = np.load("ur_opt.npy",allow_pickle=True)
+# xr = np.load("xr_opt.npy",allow_pickle=True)
+# ur = np.load("ur_opt.npy",allow_pickle=True)
 

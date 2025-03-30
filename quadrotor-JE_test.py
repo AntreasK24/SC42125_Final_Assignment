@@ -163,7 +163,7 @@ R = np.eye(Bd.shape[1]) * 0.01
 P = solve_discrete_are(Ad, Bd, Q, R)
 K = np.linalg.inv(R + B.T @ P @ B) @ (B.T @ P @ A)
 
-terminal_set(P, K, 5)
+terminal_set(P, K, 0.01)
 
 x0 = np.zeros(dim_x)
 

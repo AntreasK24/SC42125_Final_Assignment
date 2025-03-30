@@ -26,8 +26,16 @@ class OptimalTargetSelection:
 
         if self.trajectory == "circle":
             yrefs = self.circular_trajectory(radius=5)
+        elif self.trajectory == "eight":
+            yrefs = self.figure_eight_trajectory()
         elif self.trajectory == "tudelft":
             yrefs = self.tudelft_trajectory()
+        elif self.trajectory == "cyprus":
+            yrefs = self.cyprus_trajectory()
+        elif self.trajectory == "bread":
+            yrefs = self.bread_trajectory()
+
+
 
         xr_combined = []
         ur_combined = []
@@ -74,6 +82,31 @@ class OptimalTargetSelection:
         yrefs = [np.array([x, y, z_constant]) for x, y in zip(x_points, y_points)]
 
         return yrefs
+    
+    def cyprus_trajectory(self):
+        data = pd.read_csv("cyprus.csv")
+        x_points = data.iloc[:, 0].values
+        y_points = data.iloc[:, 1].values
+        z_constant = 5 
 
+        yrefs = [np.array([x, y, z_constant]) for x, y in zip(x_points, y_points)]
+
+        return yrefs
+    
+    def bread_trajectory(self):
+        data = pd.read_csv("bread.csv")
+        x_points = data.iloc[:, 0].values
+        y_points = data.iloc[:, 1].values
+        z_constant = 5 
+
+        yrefs = [np.array([x, y, z_constant]) for x, y in zip(x_points, y_points)]
+
+        return yrefs
+
+    def figure_eight_trajectory(self, radius=5):
+        theta = np.linspace(0, 2 * np.pi, 20)
+        yrefs = [np.array([radius * np.sin(t), radius * np.sin(t) * np.cos(t), 5]) for t in theta]
+
+        return yrefs
 
 
