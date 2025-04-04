@@ -188,7 +188,7 @@ C = np.zeros((3, 12))
 for i in range(3):
     C[i, i] = 1
 
-target_selector = OptimalTargetSelection.OptimalTargetSelection(Ad, Bd, C, Q, R,m,"circle")
+target_selector = OptimalTargetSelection.OptimalTargetSelection(Ad, Bd, C, Q, R,m,"p")
 if new_trajectory:
     target_selector.trajectory_gen()
 
@@ -224,42 +224,38 @@ for t in tqdm(range(N_sim), desc="Simulating MPC"):
         y_cnt += 1
     
     if disturbances:
-        dk = np.random.normal(0, 0.05, size=12)  
+        dk = np.random.normal(0, 0.05, size=12)
     else:
         dk = np.zeros(12)
 
     x_ref_horizon = x_ref[t:t + N + 1, :] if t + N + 1 <= x_ref.shape[0] else x_ref[t:, :]
     u_ref_horizon = u_ref[t:t + N, :] if t + N <= u_ref.shape[0] else u_ref[t:, :]
 
-    current_horizon = x_ref_horizon.shape[0] - 1  # Number of steps in the current horizon
+    current_horizon = x_ref_horizon.shape[0] - 1
 
     if current_horizon <= 0:
         print("Reached the end of the reference trajectory.")
         break
 
     if disturbances:
-        x = x_hat[t,:]
+        x = x_hat[t, :]
     else:
-        x = x_hist[t,:]
+        x = x_hist[t, :]
 
-
-    # Solve the MPC problem
     u_0, x_1, x_traj, u_seq = mpc(Ad, Bd, current_horizon, x, x_ref_horizon, u_ref_horizon, y_ref[y_cnt], Q, R, Pl, dim_x, dim_u, dk[:3])
     u_hist[t, :] = u_0
 
     if u_0 is None:
-        break  # Stop simulation if there's no valid control input
-
+        break
 
     if disturbances:
-        # Forward simulate the system
-        x_hist[t + 1, :] = Ad @ x_hat[t, :] + Bd @ u_0 + dk 
-
-        y_k = x_hist[t + 1, :]  # Actual output (noisy)
-        x_hat[t+1,:] = Ad @ x_hat[t,:] + Bd @ u_0 + L @ (y_k - x_hat[t,:]) 
-        d_est = x_hist[t + 1, :] - x_hat[t+1,:]  
+        x_hist[t + 1, :] = Ad @ x_hat[t, :] + Bd @ u_0 + dk
+        y_k = x_hist[t + 1, :]
+        x_hat[t + 1, :] = Ad @ x_hat[t, :] + Bd @ u_0 + L @ (y_k - x_hat[t, :])
+        d_est = x_hist[t + 1, :] - x_hat[t + 1, :]
     else:
-        x_hist[t + 1, :] = Ad @ x_hist[t, :] + Bd @ u_0 
+        x_hist[t + 1, :] = Ad @ x_hist[t, :] + Bd @ u_0
+
 
 
 
