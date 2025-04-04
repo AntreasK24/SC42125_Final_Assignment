@@ -5,7 +5,7 @@ import os
 
 class OptimalTargetSelection:
 
-    def __init__(self,Ad,Bd,C,Q,R,m,trajectory = "circle"):
+    def __init__(self,Ad,Bd,C,Q,R,m,trajectory = "circle",online = True):
         self.Ad = Ad
         self.Bd = Bd
         self.C = C
@@ -34,6 +34,8 @@ class OptimalTargetSelection:
             yrefs = self.cyprus_trajectory()
         elif self.trajectory == "bread":
             yrefs = self.bread_trajectory()
+        else:
+            yrefs = np.array([[5,5,5]])
 
 
 
@@ -51,6 +53,8 @@ class OptimalTargetSelection:
                 cost += cp.quad_form(xr[k], self.Q) + cp.quad_form(ur[k], self.R)
                 constraints += [xr[k+1] == self.Ad @ xr[k] + self.Bd @ ur[k]]
                 constraints += [self.C @ xr[k] == yref]
+                constraints += [ur[k][0] >= self.m * (-9.81)]
+
             cost += cp.quad_form(xr[N-1], self.Q)
 
             problem = cp.Problem(cp.Minimize(cost), constraints)
@@ -65,10 +69,37 @@ class OptimalTargetSelection:
 
         np.save("trajectories/xr_opt.npy", xr_combined)
         np.save("trajectories/ur_opt.npy", ur_combined)
+        np.save("trajectories/yref",yrefs)
+
+    def trajectory_gen_with_disturbances(self,d,yref):
+
+        N = 50
+
+        xr = cp.Variable((N,12))
+        ur = cp.Variable((N,4))
+
+        cost = 0
+        constraints = []
+
+        
+
+        for k in range(N-1):
+            
+            cost += cp.quad_form(xr[k], self.Q) + cp.quad_form(ur[k], self.R)
+            constraints += [xr[k+1] == self.Ad @ xr[k] + self.Bd @ ur[k]]
+            constraints += [self.C @ xr[k] == (yref - d)]
+            constraints += [ur[k][0] >= self.m * (-9.81)]
+
+        cost += cp.quad_form(xr[N-1], self.Q)
+
+        problem = cp.Problem(cp.Minimize(cost), constraints)
+        problem.solve(solver=cp.OSQP)
+
+        return xr.value, ur.value
 
 
-    def circular_trajectory(self,radius = 5):
-        theta = np.linspace(0,2*np.pi,10)
+    def circular_trajectory(self,radius = 10):
+        theta = np.linspace(0,2*np.pi,20)
         yrefs =  [np.array([radius * np.cos(t), radius * np.sin(t), 5]) for t in theta]
 
         return yrefs
@@ -103,8 +134,8 @@ class OptimalTargetSelection:
 
         return yrefs
 
-    def figure_eight_trajectory(self, radius=5):
-        theta = np.linspace(0, 2 * np.pi, 20)
+    def figure_eight_trajectory(self, radius=10):
+        theta = np.linspace(0, 2 * np.pi, 30)
         yrefs = [np.array([radius * np.sin(t), radius * np.sin(t) * np.cos(t), 5]) for t in theta]
 
         return yrefs

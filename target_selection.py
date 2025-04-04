@@ -61,7 +61,7 @@ Ad, Bd = discretize(A, B, Ts)
 
 
 # Create an instance of the OptimalTargetSelection class
-target_selector = OptimalTargetSelection.OptimalTargetSelection(Ad, Bd, C, Q, R,m,"circle")
+target_selector = OptimalTargetSelection.OptimalTargetSelection(Ad, Bd, C, Q, R,m,"p")
 
 # Example usage of the class
 x0 = np.zeros((Ad.shape[0], 1))  # Initial state
