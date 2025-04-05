@@ -13,7 +13,7 @@ import yaml
 from scipy.linalg import solve_discrete_lyapunov
 from scipy.signal import place_poles
 import OptimalTargetSelection
-
+import easygui
 
 
 def fd_rk4(xk, uk, dt):
@@ -46,29 +46,40 @@ def discretize(A, B, Ts):
     
     return A_d, B_d
 
-def terminal_set(P,K,c):
-
+def terminal_set(P, K, c, upper_bounds, lower_bounds):
     stable = True
-
+    max_values = np.zeros(P.shape[0])
     eigenvalues, eigenvectors = eigh(P)
-    axes_length = np.sqrt(c/eigenvalues)
-
-    corners = []
+    axes_length = np.sqrt(c / eigenvalues)
     sign_combinations = np.array(np.meshgrid(*[[-1, 1]] * len(axes_length))).T.reshape(-1, len(axes_length))
-
     corners = sign_combinations * axes_length
-
     corners = corners @ eigenvectors.T
 
     for corner in corners:
-        if not np.linalg.norm(K@corner) <= 0.5:
+        max_values = np.maximum(max_values, np.abs(corner))
+        if not np.linalg.norm(K @ corner) <= 0.5:
             stable = False
+
+    for i in range(max_values.shape[0]):
+        if max_values[i] < upper_bounds[i] and max_values[i] > lower_bounds[i]:
+            continue
+        else:
+            stable = False
+            break
 
     if stable:
         print("System is Stable")
     else:
         print("System is Unstable")
-def mpc(A, B, N, x0, x_ref, u_ref,yref, Q, R, P,dim_x,dim_u,d):
+
+    print("Max values across corners:", max_values)
+    return max_values
+
+
+
+
+    
+def mpc(A, B, N, x0, x_ref, u_ref,yref, Q, R, P,dim_x,dim_u,d,upper_bounds,lower_bounds):
 
     #Solve OTS online
     
@@ -87,11 +98,13 @@ def mpc(A, B, N, x0, x_ref, u_ref,yref, Q, R, P,dim_x,dim_u,d):
     # ots_problem = cp.Problem(cp.Minimize(ots_cost), ots_constraints)
     # ots_problem.solve(solver=cp.OSQP)
 
+
     if disturbances:
         xref,uref = target_selector.trajectory_gen_with_disturbances(d,yref)
-
         x_ref = xref
         u_ref = uref
+    
+
 
     cost = 0.0
     constraints = []
@@ -108,21 +121,58 @@ def mpc(A, B, N, x0, x_ref, u_ref,yref, Q, R, P,dim_x,dim_u,d):
         constraints += [x[:, k + 1] == A @ x[:, k] + B @ u[:, k]]
         constraints += [u[0, k] >= m * (-9.81)]
 
+        for i in range(12):
+            constraints += [x[i, k] <= upper_bounds[i], x[i, k] >= lower_bounds[i]]
+
     constraints += [x[:, 0] == x0]
     #constraints += [cp.quad_form(0.5*x[:,N], Q) <= 5]
     # Terminal cost
     cost += 1*cp.quad_form(x[:, N] - x_ref[N, :], P)
+    #constraints += [x[5,N] == np.pi]
+
 
     problem = cp.Problem(cp.Minimize(cost), constraints)
-    problem.solve(solver=cp.SCS)
+    problem.solve(solver=cp.ECOS)
 
     return u[:, 0].value, x[:, 1].value, x[:, :].value, u[:, :].value
 
 
-disturbances = True
+disturbances = False
 new_trajectory = True
 
 N = 20
+
+point = [[0,0,0,0,0,0]]
+radius = 5
+height = 5
+circle_values = [[5,5]]
+
+choice = easygui.choicebox("Select trajectory type:", "Trajectory type", ["Pre loaded", "Single point", "Circle","Tu Delft","Bread"])
+
+if choice == "Pre loaded":
+    new_trajectory = False
+    traj = "nothing"
+elif choice == "Single point":
+
+    fields = ["X", "Y", "Z", "Roll", "Pitch", "Yaw"]
+    defaults = ["5", "5", "5", "0","0","0"]
+
+    traj = "p"
+    values = easygui.multenterbox("Enter X Y Z Coordinates:", "Coordinate Input", fields, defaults)
+
+    point = np.array([[float(v.strip()) for v in values]])
+elif choice == "Circle":
+    traj = "circle"
+    values = easygui.multenterbox("Enter Radius and Height:", "Coordinate Input", ["Radius", "Height"], ["5","5"])
+    circle_values = np.array([[float(v.strip()) for v in values]])
+elif choice == "Tu Delft":
+    traj = "tudelft"
+elif choice == "Bread":
+    traj = "bread"
+
+disturbances = easygui.ynbox("Do you want disturbances?", "Confirm")
+
+
 
 with open("quadrotor.yaml", "r") as file:
     params = yaml.safe_load(file)
@@ -133,7 +183,8 @@ Iy = params["Iy"]  # kg m^2
 Iz = params["Iz"]  # kg m^2
 m = params["m"]  # kg
 
-m = 1
+lower_bounds = [-1000,-1000,0.0,-0.17,-0.17,-2*np.pi,-5,-5,-3,-2,-3,-3]
+upper_bounds = [1000,1000,1000,0.17,0.17,2*np.pi,5,5,3,2,3,3]
 
 A = np.zeros((12,12))
 A[0,6] = 1
@@ -178,17 +229,23 @@ Ak = A + B@K
 Pl = solve_discrete_lyapunov(Ak, Qk)
 
 
-terminal_set(Pl,K,5)
+terminal_set(Pl,K,0.25,upper_bounds,lower_bounds)
 
 
 x0 = np.zeros(12)
 d = np.zeros(12)
 d[8] = -g * 0.1  # Gravity in the z-velocity
-C = np.zeros((3, 12))
-for i in range(3):
-    C[i, i] = 1
+C = np.zeros((6, 12))
+C[0, 0] = 1
+C[1, 1] = 1
+C[2, 2] = 1
+C[3, 3] = 1
+C[4, 4] = 1
+C[5, 5] = 1
 
-target_selector = OptimalTargetSelection.OptimalTargetSelection(Ad, Bd, C, Q, R,m,"p")
+
+
+target_selector = OptimalTargetSelection.OptimalTargetSelection(Ad, Bd, C, Q, R,m,traj,point[0][0],point[0][1],point[0][2],point[0][3],point[0][4],point[0][5],circle_values[0][0],circle_values[0][1])
 if new_trajectory:
     target_selector.trajectory_gen()
 
@@ -199,10 +256,6 @@ u_ref = np.load("trajectories/ur_opt.npy", allow_pickle=True)
 y_ref = np.load("trajectories/yref.npy",allow_pickle=True)
 
 
-print(y_ref)
-
-print(y_ref.shape)
-
 
 # Simulation
 N_sim = x_ref.shape[0]
@@ -211,7 +264,7 @@ u_hist = np.zeros((N_sim, 4))
 x_hist[0, :] = x0
 
 if disturbances:
-    L_poles = np.array([0.85, 0.87, 0.89, 0.91, 0.93, 0.94, 0.95, 0.96, 0.97, 0.98, 0.99, 0.999])
+    L_poles = np.array([0.85, 0.87, 0.89, 0.75, 0.75, 0.75, 0.95, 0.96, 0.97, 0.98, 0.99, 0.999])
     L = place_poles(np.eye(dim_x), np.eye(np.eye(dim_x).shape[0]), L_poles).gain_matrix
 
 
@@ -223,8 +276,11 @@ for t in tqdm(range(N_sim), desc="Simulating MPC"):
     if t % 50 == 0 and t > 0:
         y_cnt += 1
     
+
+    y_cnt = y_cnt % len(y_ref)
     if disturbances:
         dk = np.random.normal(0, 0.05, size=12)
+        dk[3:6] = np.random.normal(0, 0, size=3)
     else:
         dk = np.zeros(12)
 
@@ -242,7 +298,7 @@ for t in tqdm(range(N_sim), desc="Simulating MPC"):
     else:
         x = x_hist[t, :]
 
-    u_0, x_1, x_traj, u_seq = mpc(Ad, Bd, current_horizon, x, x_ref_horizon, u_ref_horizon, y_ref[y_cnt], Q, R, Pl, dim_x, dim_u, dk[:3])
+    u_0, x_1, x_traj, u_seq = mpc(Ad, Bd, current_horizon, x, x_ref_horizon, u_ref_horizon, y_ref[y_cnt], Q, R, Pl, dim_x, dim_u, dk[:6],upper_bounds,lower_bounds)
     u_hist[t, :] = u_0
 
     if u_0 is None:
@@ -317,43 +373,43 @@ for i in range(0, x_hist.shape[0], 3):  # Every third step
     y_body = R[1, :]  # y-axis
     z_body = R[2, :]  # z-axis
 
-    # # Plot the orientation vectors
-    # ax.quiver(
-    #     x_pos[i],
-    #     y_pos[i],
-    #     z_pos[i],  # Starting point
-    #     x_body[0],
-    #     x_body[1],
-    #     x_body[2],
-    #     color="r",
-    #     length=0.5,
-    #     normalize=True,
-    #     label="x-body" if i == 0 else "",
-    # )
-    # ax.quiver(
-    #     x_pos[i],
-    #     y_pos[i],
-    #     z_pos[i],  # Starting point
-    #     y_body[0],
-    #     y_body[1],
-    #     y_body[2],
-    #     color="g",
-    #     length=0.5,
-    #     normalize=True,
-    #     label="y-body" if i == 0 else "",
-    # )
-    # ax.quiver(
-    #     x_pos[i],
-    #     y_pos[i],
-    #     z_pos[i],  # Starting point
-    #     z_body[0],
-    #     z_body[1],
-    #     z_body[2],
-    #     color="b",
-    #     length=0.5,
-    #     normalize=True,
-    #     label="z-body" if i == 0 else "",
-    # )
+    # Plot the orientation vectors
+    ax.quiver(
+        x_pos[i],
+        y_pos[i],
+        z_pos[i],  # Starting point
+        x_body[0],
+        x_body[1],
+        x_body[2],
+        color="r",
+        length=0.5,
+        normalize=True,
+        label="x-body" if i == 0 else "",
+    )
+    ax.quiver(
+        x_pos[i],
+        y_pos[i],
+        z_pos[i],  # Starting point
+        y_body[0],
+        y_body[1],
+        y_body[2],
+        color="g",
+        length=0.5,
+        normalize=True,
+        label="y-body" if i == 0 else "",
+    )
+    ax.quiver(
+        x_pos[i],
+        y_pos[i],
+        z_pos[i],  # Starting point
+        z_body[0],
+        z_body[1],
+        z_body[2],
+        color="b",
+        length=0.5,
+        normalize=True,
+        label="z-body" if i == 0 else "",
+    )
 
 # Set equal scaling for all axes
 max_range = (
@@ -391,10 +447,21 @@ plt.plot(x_hist[:, 2][:-1], label="z")
 plt.legend()
 plt.show()
 
-# Plot tilt of the drone
-plt.plot(x_hist[:, 6], label="u")
-plt.plot(x_hist[:, 7], label="v")
-plt.plot(x_hist[:, 8], label="w")
+plt.plot(x_hist[:, 3][:-1], label="roll")
+plt.plot(x_hist[:, 4][:-1], label="pitch")
+plt.plot(x_hist[:, 5][:-1], label="yaw")
+plt.legend()
+plt.show()
+
+plt.plot(x_hist[:, 6], label="vx")
+plt.plot(x_hist[:, 7], label="vy")
+plt.plot(x_hist[:, 8], label="vz")
+plt.legend()
+plt.show()
+
+plt.plot(x_hist[:, 9], label="omega x")
+plt.plot(x_hist[:, 10], label="omega y")
+plt.plot(x_hist[:, 11], label="omega z")
 plt.legend()
 plt.show()
 
