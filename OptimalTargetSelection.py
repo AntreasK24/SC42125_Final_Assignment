@@ -106,12 +106,12 @@ class OptimalTargetSelection:
             cost += cp.quad_form(xr[k], self.Q) + cp.quad_form(ur[k], self.R)
             constraints += [xr[k+1] == self.Ad @ xr[k] + self.Bd @ ur[k]]
             constraints += [self.C @ xr[k] == (yref - d)]
-            constraints += [ur[k][0] >= self.m * (-9.81)]
+            #constraints += [ur[k][0] >= self.m * (-9.81)]
 
         cost += cp.quad_form(xr[N-1], self.Q)
 
         problem = cp.Problem(cp.Minimize(cost), constraints)
-        problem.solve(solver=cp.SCS, max_iters=10000,verbose=True)
+        problem.solve(solver=cp.SCS, max_iters=100000,verbose=True)
 
         return xr.value, ur.value
 

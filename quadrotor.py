@@ -121,8 +121,9 @@ def mpc(A, B, N, x0, x_ref, u_ref,yref, Q, R, P,dim_x,dim_u,d,upper_bounds,lower
         constraints += [x[:, k + 1] == A @ x[:, k] + B @ u[:, k]]
         constraints += [u[0, k] >= m * (-9.81)]
 
-        for i in range(12):
-            constraints += [x[i, k] <= upper_bounds[i], x[i, k] >= lower_bounds[i]]
+        if k>0:
+            for i in range(12):
+                constraints += [x[i, k] <= upper_bounds[i], x[i, k] >= lower_bounds[i]]
 
     constraints += [x[:, 0] == x0]
     #constraints += [cp.quad_form(0.5*x[:,N], Q) <= 5]
@@ -272,17 +273,20 @@ x_hat = np.zeros((N_sim + 1, 12))
 
 y_cnt = 0
 
+if disturbances:
+    # dk = np.random.normal(0, 0.05, size=12)
+    dk = np.ones(12) * 0.1
+    dk[3:6] = np.random.normal(0, 0, size=3)
+else:
+    dk = np.zeros(12)
+
 for t in tqdm(range(N_sim), desc="Simulating MPC"):
     if t % 50 == 0 and t > 0:
         y_cnt += 1
     
 
     y_cnt = y_cnt % len(y_ref)
-    if disturbances:
-        dk = np.random.normal(0, 0.05, size=12)
-        dk[3:6] = np.random.normal(0, 0, size=3)
-    else:
-        dk = np.zeros(12)
+
 
     x_ref_horizon = x_ref[t:t + N + 1, :] if t + N + 1 <= x_ref.shape[0] else x_ref[t:, :]
     u_ref_horizon = u_ref[t:t + N, :] if t + N <= u_ref.shape[0] else u_ref[t:, :]
