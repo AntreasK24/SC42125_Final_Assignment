@@ -314,6 +314,7 @@ print("(A,B) is stabilizable:", is_stabilizable(A, B))
 
 # Initial state
 x_init = np.zeros((dim_x,1))
+#x_init[0:3] = 0.001
 
 #x_ref = np.load("trajectories/xr_opt.npy", allow_pickle=True)
 #u_ref = np.load("trajectories/ur_opt.npy", allow_pickle=True)
