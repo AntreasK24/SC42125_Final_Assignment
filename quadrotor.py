@@ -14,6 +14,7 @@ from scipy.linalg import solve_discrete_lyapunov
 from scipy.signal import place_poles
 import OptimalTargetSelection
 import easygui
+from numpy.linalg import matrix_rank
 
 
 def fd_rk4(xk, uk, dt):
@@ -81,22 +82,6 @@ def terminal_set(P, K, c, upper_bounds, lower_bounds):
     
 def mpc(A, B, N, x0, x_ref, u_ref,yref, Q, R, P,dim_x,dim_u,d,upper_bounds,lower_bounds):
 
-    #Solve OTS online
-    
-    # ots_cost = 0
-    # ots_constraints = 0
-    # xr = cp.Variable((12))
-    # ur = cp.Variable((4))
-    # for k in range(N-1):
-    #     cost += cp.quad_form(xr[k], Q) + cp.quad_form(ur[k], R)
-    #     constraints += [xr[k+1] == A @ xr[k] + B @ ur[k]]
-    #     constraints += [C @ xr[k] == yref]
-    #     constraints += [ur[k][0] >= m * (-9.81)]
-
-    # cost += cp.quad_form(xr[N-1], Q)
-
-    # ots_problem = cp.Problem(cp.Minimize(ots_cost), ots_constraints)
-    # ots_problem.solve(solver=cp.OSQP)
 
 
     if disturbances:
@@ -126,14 +111,27 @@ def mpc(A, B, N, x0, x_ref, u_ref,yref, Q, R, P,dim_x,dim_u,d,upper_bounds,lower
                 constraints += [x[i, k] <= upper_bounds[i], x[i, k] >= lower_bounds[i]]
 
     constraints += [x[:, 0] == x0]
-    #constraints += [cp.quad_form(0.5*x[:,N], Q) <= 5]
     # Terminal cost
     cost += 1*cp.quad_form(x[:, N] - x_ref[N, :], P)
-    #constraints += [x[5,N] == np.pi]
+
+    cost *= 1e-3 
 
 
     problem = cp.Problem(cp.Minimize(cost), constraints)
-    problem.solve(solver=cp.ECOS)
+    problem.solve(solver=cp.OSQP,verbose=False,warm_start = True,eps_abs=1e-5, eps_rel=1e-5, max_iter=10000)
+
+    print("📊 Solver status:", problem.status)
+    print("✅ u.value is None?", u.value is None)
+    print("✅ x.value is None?", x.value is None)
+
+
+    if u.value is None or x.value is None:
+        print("❌ Solver returned no solution.")
+        return None, None, None, None
+    else:
+        print("✅ MPC solution obtained (even if marked inaccurate).")
+
+
 
     return u[:, 0].value, x[:, 1].value, x[:, :].value, u[:, :].value
 
@@ -211,6 +209,9 @@ Ad,Bd = discretize(A,B,Ts=0.1)
 system_poles = np.linalg.eigvals(Ad)
 print("Poles of Ad: ", system_poles)
 
+
+
+
 dim_x = 12
 dim_u = 4
 
@@ -234,15 +235,37 @@ terminal_set(Pl,K,0.25,upper_bounds,lower_bounds)
 
 
 x0 = np.zeros(12)
-d = np.zeros(12)
-d[8] = -g * 0.1  # Gravity in the z-velocity
+
 C = np.zeros((6, 12))
-C[0, 0] = 1
-C[1, 1] = 1
-C[2, 2] = 1
-C[3, 3] = 1
-C[4, 4] = 1
-C[5, 5] = 1
+C[0, 0] = 1  # x
+C[1, 1] = 1  # y
+C[2, 2] = 1  # z
+C[3, 3] = 1  # roll
+C[4, 4] = 1  # pitch
+C[5, 5] = 1  # yaw
+
+
+
+
+A_aug = np.block([
+    [Ad, np.zeros((12, 1))],
+    [np.zeros((1, 12)), np.eye(1)]
+])
+B_aug = np.vstack([Bd, np.zeros((1, 4))])
+
+# Only z position is affected by the disturbance
+C_d = np.zeros((6, 1))
+C_d = np.zeros((6, 1))
+C_d[0, 0] = 1.1  # x
+C_d[1, 0] = 1.1  # y
+C_d[2, 0] = 1.0  # z
+C_d[3, 0] = 1.0
+C_d[4, 0] = 1.0
+C_d[5, 0] = 1.0
+C_aug = np.hstack([C, C_d])  # now shape (6, 13)
+O = np.vstack([C_aug @ np.linalg.matrix_power(A_aug, i) for i in range(13)])
+print("Observability matrix rank:", matrix_rank(O))
+
 
 
 
@@ -265,18 +288,27 @@ u_hist = np.zeros((N_sim, 4))
 x_hist[0, :] = x0
 
 if disturbances:
-    L_poles = np.array([0.85, 0.87, 0.89, 0.75, 0.75, 0.75, 0.95, 0.96, 0.97, 0.98, 0.99, 0.999])
-    L = place_poles(np.eye(dim_x), np.eye(np.eye(dim_x).shape[0]), L_poles).gain_matrix
+    # Add a slower pole for the disturbance manually
+    L_poles = np.concatenate([np.linspace(0.95, 0.99, 12), [0.98]])
+
+    L_aug = place_poles(A_aug.T, C_aug.T, L_poles).gain_matrix.T  # might still work!
 
 
-x_hat = np.zeros((N_sim + 1, 12))  
 
 y_cnt = 0
 
+x_hat = np.zeros((N_sim + 1, 12))
+d_hat = np.zeros((N_sim + 1, 1))  # now a 1D disturbance
+
+
+
+d_est_now = np.zeros(3) 
+
+
 if disturbances:
     # dk = np.random.normal(0, 0.05, size=12)
-    dk = np.ones(12) * 0.1
-    dk[3:6] = np.random.normal(0, 0, size=3)
+    dk = np.zeros(12) 
+    dk[2] = 1e-2
 else:
     dk = np.zeros(12)
 
@@ -302,18 +334,33 @@ for t in tqdm(range(N_sim), desc="Simulating MPC"):
     else:
         x = x_hist[t, :]
 
-    u_0, x_1, x_traj, u_seq = mpc(Ad, Bd, current_horizon, x, x_ref_horizon, u_ref_horizon, y_ref[y_cnt], Q, R, Pl, dim_x, dim_u, dk[:6],upper_bounds,lower_bounds)
-    u_hist[t, :] = u_0
+    if disturbances:
+        d_est_now = np.array([0, 0, d_hat[t, 0]])  # use only z-disturbance
+    else:
+        d_est_now = np.zeros(3)
 
+    u_0, x_1, x_traj, u_seq = mpc(Ad, Bd, current_horizon, x, x_ref_horizon, u_ref_horizon, y_ref[y_cnt], Q, R, Pl, dim_x, dim_u, d_est_now,upper_bounds,lower_bounds)
+    u_hist[t, :] = u_0
     if u_0 is None:
+        print(f"❌ Solver failed at timestep {t}")
         break
 
     if disturbances:
+        # True next state (simulate plant)
         x_hist[t + 1, :] = Ad @ x_hat[t, :] + Bd @ u_0 + dk
-        y_k = x_hist[t + 1, :]
-        x_hat[t + 1, :] = Ad @ x_hat[t, :] + Bd @ u_0 + L @ (y_k - x_hat[t, :])
-        d_est = x_hist[t + 1, :] - x_hat[t + 1, :]
+        y_k = x_hist[t + 1, 0:6]  # only position is measured (x, y, z)
+
+        tilde_x_hat = np.hstack([x_hat[t], d_hat[t]])
+        y_hat = C_aug @ tilde_x_hat
+
+        tilde_x_hat = A_aug @ tilde_x_hat + B_aug @ u_0 + L_aug @ (y_k - y_hat)
+
+        x_hat[t + 1] = tilde_x_hat[:12] 
+        d_hat[t + 1] = tilde_x_hat[12:]
+
+
     else:
+        # No disturbance/observer, use true state evolution
         x_hist[t + 1, :] = Ad @ x_hist[t, :] + Bd @ u_0
 
 
@@ -471,9 +518,34 @@ plt.show()
 
 # Plot the control inputs
 plt.plot(u_hist[:, 0], label="u1")
-plt.plot(u_hist[:, 2], label="u2")
+plt.plot(u_hist[:, 1], label="u2")
 plt.plot(u_hist[:, 2], label="u3")
 plt.plot(u_hist[:, 3], label="u4")
 
 plt.legend()
 plt.show()
+
+
+if disturbances:
+    # Plot estimation error for first 3 states
+    state_error = x_hist[:N_sim] - x_hat[:N_sim]
+    for i in range(3):
+        plt.plot(state_error[:, i], label=f"State {i} error")
+    plt.legend()
+    plt.title("State Estimation Errors (x, y, z)")
+    plt.xlabel("Timestep")
+    plt.ylabel("Error")
+    plt.grid(True)
+    plt.show()
+
+    # Plot estimated vs true disturbances for first 3 states
+    for i in range(3):
+        disturbance_est = [x_hist[t + 1, i] - x_hat[t + 1, i] for t in range(N_sim - 1)]
+        plt.plot(disturbance_est, label=f"Estimated disturbance {i}")
+        plt.axhline(dk[i], linestyle='--', color='gray', label=f"True disturbance {i}" if i == 0 else "")
+    plt.legend()
+    plt.title("Estimated vs. True Disturbances (x, y, z)")
+    plt.xlabel("Timestep")
+    plt.ylabel("Disturbance Value")
+    plt.grid(True)
+    plt.show()

@@ -5,7 +5,7 @@ import os
 
 class OptimalTargetSelection:
 
-    def __init__(self,Ad,Bd,C,Q,R,m,trajectory = "circle",x=5,y=5,z=5,roll=0,pitch=0,yaw=0,radius=5,height=5):
+    def __init__(self,Ad,Bd,C,Q,R,m,debug,trajectory = "circle",x=5,y=5,z=5,roll=0,pitch=0,yaw=0,radius=5,height=5):
         self.Ad = Ad
         self.Bd = Bd
         self.C = C
@@ -25,6 +25,8 @@ class OptimalTargetSelection:
         self.height = height
 
         self.trajectory = trajectory
+
+        self.debug = debug
 
         g = 9,81 #m/s^2
 
@@ -105,13 +107,20 @@ class OptimalTargetSelection:
             
             cost += cp.quad_form(xr[k], self.Q) + cp.quad_form(ur[k], self.R)
             constraints += [xr[k+1] == self.Ad @ xr[k] + self.Bd @ ur[k]]
-            constraints += [self.C @ xr[k] == (yref - d)]
+            #constraints += [self.C @ xr[k] == (yref - d)]
+            epsilon = cp.Variable(3)
+            constraints += [self.C[:3, :] @ xr[k] + epsilon == yref[:3] - d[:3]]
+            cost += cp.quad_form(epsilon, np.eye(3) * 1000)  # penalize deviation
             #constraints += [ur[k][0] >= self.m * (-9.81)]
 
         cost += cp.quad_form(xr[N-1], self.Q)
 
         problem = cp.Problem(cp.Minimize(cost), constraints)
-        problem.solve(solver=cp.SCS, max_iters=100000,verbose=True)
+        if self.debug:
+            print("📌 yref[:3] =", yref[:3])
+            print("📌 d[:3] =", d[:3])
+            print("📌 target output =", yref[:3] - d[:3])
+        problem.solve(solver=cp.SCS, max_iters=100000,verbose=False)
 
         return xr.value, ur.value
 
