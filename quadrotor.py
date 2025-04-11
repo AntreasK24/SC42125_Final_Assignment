@@ -15,6 +15,7 @@ from scipy.signal import place_poles
 import OptimalTargetSelection
 import easygui
 from numpy.linalg import matrix_rank
+import os
 
 
 def fd_rk4(xk, uk, dt):
@@ -144,7 +145,7 @@ debug = False
 
 N = 20
 
-point = [[0,0,0,0,0,0]]
+point = [[0,0,0]]
 radius = 5
 height = 5
 circle_values = [[5,5]]
@@ -155,8 +156,8 @@ if choice == "Pre loaded":
     new_trajectory = False
     traj = "nothing"
 elif choice == "Single point":
-    fields = ["X", "Y", "Z", "Roll", "Pitch", "Yaw"]
-    defaults = ["5", "5", "5", "0","0","0"]
+    fields = ["X", "Y", "Z"]
+    defaults = ["5", "5", "5"]
     traj = "p"
     values = easygui.multenterbox("Enter X Y Z Coordinates:", "Coordinate Input", fields, defaults)
     point = np.array([[float(v.strip()) for v in values]])
@@ -168,6 +169,11 @@ elif choice == "Tu Delft":
     traj = "tudelft"
 elif choice == "Bread":
     traj = "bread"
+
+fields = ["X", "Y", "Z","Roll","Pitch","Yaw","Vx","Vy","Vz","ωx","ωy","ωz"]
+defaults = ["0", "0", "0","0", "0", "0","0", "0", "0","0", "0", "0"]
+values = easygui.multenterbox("Enter initial state:", "Initial State", fields, defaults)
+x0 = np.array([[float(v.strip()) for v in values]])
 
 
 disturbances = easygui.ynbox("Do you want disturbances?", "Confirm")
@@ -184,8 +190,8 @@ Iy = params["Iy"]  # kg m^2
 Iz = params["Iz"]  # kg m^2
 m = params["m"]  # kg
 
-lower_bounds = [-1000,-1000,0.0,-0.17,-0.17,-2*np.pi,-5,-5,-3,-2,-3,-3]
-upper_bounds = [1000,1000,1000,0.17,0.17,2*np.pi,5,5,3,2,3,3]
+lower_bounds = [-1000,-1000,0.0,-0.17,-0.17,-2*np.pi,-5,-5,-3,-0.5,-0.5,-1]
+upper_bounds = [1000,1000,1000,0.17,0.17,2*np.pi,5,5,3,0.5,0.5,1]
 
 A = np.zeros((12,12))
 A[0,6] = 1
@@ -220,7 +226,7 @@ dim_u = 4
 
 
 Q = np.eye(Ad.shape[0]) * 10
-R = np.eye(Bd.shape[1])
+R = np.eye(Bd.shape[1]) * 20
 
 
 P = solve_discrete_are(A,B,Q,R)
@@ -236,9 +242,8 @@ Pl = solve_discrete_lyapunov(Ak, Qk)
 terminal_set(Pl,K,0.25,upper_bounds,lower_bounds)
 
 
-x0 = np.zeros(12)
-x0[0] =2
-x0[5] = np.pi
+
+
 
 C = np.zeros((6, 12))
 C[0, 0] = 1  # x
@@ -273,7 +278,7 @@ print("Observability matrix rank:", matrix_rank(O))
 
 
 
-target_selector = OptimalTargetSelection.OptimalTargetSelection(Ad, Bd, C, Q, R,m,debug,traj,point[0][0],point[0][1],point[0][2],point[0][3],point[0][4],point[0][5],circle_values[0][0],circle_values[0][1])
+target_selector = OptimalTargetSelection.OptimalTargetSelection(Ad, Bd, C, Q, R,m,debug,traj,point[0][0],point[0][1],point[0][2],0,0,0,circle_values[0][0],circle_values[0][1])
 if new_trajectory:
     target_selector.trajectory_gen()
 
@@ -379,6 +384,13 @@ for t in tqdm(range(N_sim), desc="Simulating MPC"):
 x_pos = x_hist[:, 0]
 y_pos = x_hist[:, 1]
 z_pos = x_hist[:, 2]
+yaw = x_hist[:,5]
+
+os.makedirs("plot_data", exist_ok=True)
+np.save("plot_data/x_R_20.npy", x_pos)
+np.save("plot_data/y_R_20.npy", y_pos)
+np.save("plot_data/z_R_20.npy",z_pos)
+np.save("plot_data/yaw_R_20.npy",yaw)
 
 
 if disturbances:
