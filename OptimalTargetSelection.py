@@ -2,10 +2,12 @@ import numpy as np
 import cvxpy as cp
 import pandas as pd
 import os
+from tqdm import tqdm
+
 
 class OptimalTargetSelection:
 
-    def __init__(self,Ad,Bd,C,Q,R,m,debug,trajectory = "circle",x=5,y=5,z=5,roll=0,pitch=0,yaw=0,radius=5,height=5):
+    def __init__(self,Ad,Bd,C,Q,R,m,debug,trajectory = "circle",x=2,y=2,z=2,roll=0,pitch=0,yaw=0,radius=5,height=5):
         self.Ad = Ad
         self.Bd = Bd
         self.C = C
@@ -56,7 +58,7 @@ class OptimalTargetSelection:
         xr_combined = []
         ur_combined = []
 
-        for yref in yrefs:
+        for yref in tqdm(yrefs,desc="Generating Trajectory"): 
             # Set up optimization problem
             xr = cp.Variable((N, 12))
             ur = cp.Variable((N, 4))
@@ -73,7 +75,7 @@ class OptimalTargetSelection:
 
             # Solve the problem
             problem = cp.Problem(cp.Minimize(cost), constraints)
-            problem.solve(solver=cp.SCS, max_iters=10000,verbose=True)
+            problem.solve(solver=cp.SCS, max_iters=10000,verbose=False)
 
             # Store the results
             xr_combined.append(np.array(xr.value))
@@ -131,7 +133,7 @@ class OptimalTargetSelection:
         
         # Append [0, 0, 0] to each vector
         yrefs = [np.concatenate((yref, [0, 0, 0])) for yref in yrefs]
-
+        
         return yrefs
 
     def tudelft_trajectory(self):

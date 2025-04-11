@@ -118,18 +118,20 @@ def mpc(A, B, N, x0, x_ref, u_ref,yref, Q, R, P,dim_x,dim_u,d,upper_bounds,lower
 
 
     problem = cp.Problem(cp.Minimize(cost), constraints)
-    problem.solve(solver=cp.OSQP,verbose=False,warm_start = True,eps_abs=1e-5, eps_rel=1e-5, max_iter=10000)
+    problem.solve(solver=cp.ECOS,verbose=False,warm_start = True)
 
-    print("📊 Solver status:", problem.status)
-    print("✅ u.value is None?", u.value is None)
-    print("✅ x.value is None?", x.value is None)
+    if debug:
+        print("📊 Solver status:", problem.status)
+        print("✅ u.value is None?", u.value is None)
+        print("✅ x.value is None?", x.value is None)
 
 
     if u.value is None or x.value is None:
         print("❌ Solver returned no solution.")
         return None, None, None, None
     else:
-        print("✅ MPC solution obtained (even if marked inaccurate).")
+        if debug:
+            print("✅ MPC solution obtained (even if marked inaccurate).")
 
 
 
@@ -138,6 +140,7 @@ def mpc(A, B, N, x0, x_ref, u_ref,yref, Q, R, P,dim_x,dim_u,d,upper_bounds,lower
 
 disturbances = False
 new_trajectory = True
+debug = False
 
 N = 20
 
@@ -152,13 +155,10 @@ if choice == "Pre loaded":
     new_trajectory = False
     traj = "nothing"
 elif choice == "Single point":
-
     fields = ["X", "Y", "Z", "Roll", "Pitch", "Yaw"]
     defaults = ["5", "5", "5", "0","0","0"]
-
     traj = "p"
     values = easygui.multenterbox("Enter X Y Z Coordinates:", "Coordinate Input", fields, defaults)
-
     point = np.array([[float(v.strip()) for v in values]])
 elif choice == "Circle":
     traj = "circle"
@@ -169,7 +169,9 @@ elif choice == "Tu Delft":
 elif choice == "Bread":
     traj = "bread"
 
+
 disturbances = easygui.ynbox("Do you want disturbances?", "Confirm")
+debug = easygui.ynbox("Debug mode?", "Confirm")
 
 
 
@@ -235,6 +237,8 @@ terminal_set(Pl,K,0.25,upper_bounds,lower_bounds)
 
 
 x0 = np.zeros(12)
+x0[0] =2
+x0[5] = np.pi
 
 C = np.zeros((6, 12))
 C[0, 0] = 1  # x
@@ -269,7 +273,7 @@ print("Observability matrix rank:", matrix_rank(O))
 
 
 
-target_selector = OptimalTargetSelection.OptimalTargetSelection(Ad, Bd, C, Q, R,m,traj,point[0][0],point[0][1],point[0][2],point[0][3],point[0][4],point[0][5],circle_values[0][0],circle_values[0][1])
+target_selector = OptimalTargetSelection.OptimalTargetSelection(Ad, Bd, C, Q, R,m,debug,traj,point[0][0],point[0][1],point[0][2],point[0][3],point[0][4],point[0][5],circle_values[0][0],circle_values[0][1])
 if new_trajectory:
     target_selector.trajectory_gen()
 
@@ -279,6 +283,7 @@ x_ref = np.load("trajectories/xr_opt.npy", allow_pickle=True)
 u_ref = np.load("trajectories/ur_opt.npy", allow_pickle=True)
 y_ref = np.load("trajectories/yref.npy",allow_pickle=True)
 
+print("y_ref: " , y_ref.shape )
 
 
 # Simulation
@@ -287,6 +292,11 @@ x_hist = np.zeros((N_sim + 1, 12))
 u_hist = np.zeros((N_sim, 4))
 x_hist[0, :] = x0
 
+x_hat = np.zeros((N_sim + 1, 12))
+d_hat = np.zeros((N_sim + 1, 1))  
+if disturbances:
+    x_hat[0] = x0.copy()
+    d_hat[0] = 0.0  #
 if disturbances:
     # Add a slower pole for the disturbance manually
     L_poles = np.concatenate([np.linspace(0.95, 0.99, 12), [0.98]])
@@ -297,8 +307,7 @@ if disturbances:
 
 y_cnt = 0
 
-x_hat = np.zeros((N_sim + 1, 12))
-d_hat = np.zeros((N_sim + 1, 1))  # now a 1D disturbance
+
 
 
 
@@ -308,7 +317,7 @@ d_est_now = np.zeros(3)
 if disturbances:
     # dk = np.random.normal(0, 0.05, size=12)
     dk = np.zeros(12) 
-    dk[2] = 1e-2
+    dk[2] = 1e-3
 else:
     dk = np.zeros(12)
 
@@ -348,6 +357,7 @@ for t in tqdm(range(N_sim), desc="Simulating MPC"):
     if disturbances:
         # True next state (simulate plant)
         x_hist[t + 1, :] = Ad @ x_hat[t, :] + Bd @ u_0 + dk
+        x_hist[t+1,2] = x_hist[t+1,2] + np.random.normal(0,0.1) 
         y_k = x_hist[t + 1, 0:6]  # only position is measured (x, y, z)
 
         tilde_x_hat = np.hstack([x_hat[t], d_hat[t]])
@@ -527,24 +537,24 @@ plt.show()
 
 
 if disturbances:
-    # Plot estimation error for first 3 states
-    state_error = x_hist[:N_sim] - x_hat[:N_sim]
-    for i in range(3):
-        plt.plot(state_error[:, i], label=f"State {i} error")
+    # Plot estimation error for z state (state index 2)
+    state_error_z = x_hist[:N_sim, 2] - x_hat[:N_sim, 2]
+    plt.figure()
+    plt.plot(state_error_z, label="State z error", color='blue')
     plt.legend()
-    plt.title("State Estimation Errors (x, y, z)")
+    plt.title("State Estimation Error (z)")
     plt.xlabel("Timestep")
     plt.ylabel("Error")
     plt.grid(True)
     plt.show()
 
-    # Plot estimated vs true disturbances for first 3 states
-    for i in range(3):
-        disturbance_est = [x_hist[t + 1, i] - x_hat[t + 1, i] for t in range(N_sim - 1)]
-        plt.plot(disturbance_est, label=f"Estimated disturbance {i}")
-        plt.axhline(dk[i], linestyle='--', color='gray', label=f"True disturbance {i}" if i == 0 else "")
+    # Plot estimated vs true disturbance for z state (state index 2)
+    disturbance_est_z = [x_hist[t + 1, 2] - x_hat[t + 1, 2] for t in range(N_sim - 1)]
+    plt.figure()
+    plt.plot(disturbance_est_z, label="Estimated disturbance z", color='red')
+    plt.axhline(dk[2], linestyle='--', color='gray', label="True disturbance z")
     plt.legend()
-    plt.title("Estimated vs. True Disturbances (x, y, z)")
+    plt.title("Estimated vs. True Disturbance (z)")
     plt.xlabel("Timestep")
     plt.ylabel("Disturbance Value")
     plt.grid(True)
