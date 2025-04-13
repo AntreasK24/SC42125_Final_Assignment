@@ -87,8 +87,9 @@ def mpc(A, B, N, x0, x_ref, u_ref,yref, Q, R, P,dim_x,dim_u,d,upper_bounds,lower
 
     if disturbances:
         xref,uref = target_selector.trajectory_gen_with_disturbances(d,yref)
-        x_ref = xref
+        x_ref = xref 
         u_ref = uref
+
     
 
 
@@ -105,7 +106,7 @@ def mpc(A, B, N, x0, x_ref, u_ref,yref, Q, R, P,dim_x,dim_u,d,upper_bounds,lower
         cost += cp.quad_form(x[:, k] - x_ref[k, :], Q)
         cost += cp.quad_form(u[:, k] - u_ref[k, :], R)
         constraints += [x[:, k + 1] == A @ x[:, k] + B @ u[:, k]]
-        constraints += [u[0, k] >= m * (-9.81)]
+        #constraints += [u[0, k] >= m * (-9.81)]
 
         if k>0:
             for i in range(12):
@@ -173,7 +174,7 @@ elif choice == "Bread":
 fields = ["X", "Y", "Z","Roll","Pitch","Yaw","Vx","Vy","Vz","ωx","ωy","ωz"]
 defaults = ["0", "0", "0","0", "0", "0","0", "0", "0","0", "0", "0"]
 values = easygui.multenterbox("Enter initial state:", "Initial State", fields, defaults)
-x0 = np.array([[float(v.strip()) for v in values]])
+x0 = np.array([float(v.strip()) for v in values]) 
 
 
 disturbances = easygui.ynbox("Do you want disturbances?", "Confirm")
@@ -226,7 +227,7 @@ dim_u = 4
 
 
 Q = np.eye(Ad.shape[0]) * 10
-R = np.eye(Bd.shape[1]) * 20
+R = np.eye(Bd.shape[1]) * 1
 
 
 P = solve_discrete_are(A,B,Q,R)
@@ -245,36 +246,10 @@ terminal_set(Pl,K,0.25,upper_bounds,lower_bounds)
 
 
 
-C = np.zeros((6, 12))
-C[0, 0] = 1  # x
-C[1, 1] = 1  # y
-C[2, 2] = 1  # z
-C[3, 3] = 1  # roll
-C[4, 4] = 1  # pitch
-C[5, 5] = 1  # yaw
+C = np.eye(12) 
+C2 = np.eye(12)
 
-
-
-
-A_aug = np.block([
-    [Ad, np.zeros((12, 1))],
-    [np.zeros((1, 12)), np.eye(1)]
-])
-B_aug = np.vstack([Bd, np.zeros((1, 4))])
-
-# Only z position is affected by the disturbance
-C_d = np.zeros((6, 1))
-C_d = np.zeros((6, 1))
-C_d[0, 0] = 1.1  # x
-C_d[1, 0] = 1.1  # y
-C_d[2, 0] = 1.0  # z
-C_d[3, 0] = 1.0
-C_d[4, 0] = 1.0
-C_d[5, 0] = 1.0
-C_aug = np.hstack([C, C_d])  # now shape (6, 13)
-O = np.vstack([C_aug @ np.linalg.matrix_power(A_aug, i) for i in range(13)])
-print("Observability matrix rank:", matrix_rank(O))
-
+C_dist = np.hstack([C, np.zeros((12, 12))])
 
 
 
@@ -288,7 +263,6 @@ x_ref = np.load("trajectories/xr_opt.npy", allow_pickle=True)
 u_ref = np.load("trajectories/ur_opt.npy", allow_pickle=True)
 y_ref = np.load("trajectories/yref.npy",allow_pickle=True)
 
-print("y_ref: " , y_ref.shape )
 
 
 # Simulation
@@ -298,15 +272,39 @@ u_hist = np.zeros((N_sim, 4))
 x_hist[0, :] = x0
 
 x_hat = np.zeros((N_sim + 1, 12))
-d_hat = np.zeros((N_sim + 1, 1))  
+d_hat = np.zeros((N_sim + 1, 12)) 
+z_hat = np.zeros((N_sim + 2, 13)) 
 if disturbances:
     x_hat[0] = x0.copy()
     d_hat[0] = 0.0  #
-if disturbances:
-    # Add a slower pole for the disturbance manually
-    L_poles = np.concatenate([np.linspace(0.95, 0.99, 12), [0.98]])
 
-    L_aug = place_poles(A_aug.T, C_aug.T, L_poles).gain_matrix.T  # might still work!
+    B_d = np.zeros((12, 1))
+    B_d[2, 0] = 1.0  # Disturbance only affects z
+  # or model the actual way disturbances affect states
+    A_damp = 1.0
+    A_dist = np.block([
+        [Ad, B_d],
+        [np.zeros((1, 12)), np.array([[A_damp]])]
+    ])
+
+    C_dist = np.hstack([np.eye(12), np.zeros((12, 1))])
+
+
+    Obs = np.vstack([C_dist @ np.linalg.matrix_power(A_dist, i) for i in range(24)])
+    print("Observability rank:", matrix_rank(Obs))
+if disturbances:
+        L_d = np.eye(12) * 0.001
+        L_d[2,2] = 0.1
+        A_L = np.eye(L_d.shape[0]) - L_d
+        eigvals = np.linalg.eigvals(A_L)
+        if np.any(np.abs(eigvals) >= 1.0):
+            print("❌ Observer is unstable! Max eigenvalue magnitude:", np.max(np.abs(eigvals)))
+            exit("💥 Exiting due to unstable observer.")
+        else:
+            print("✅ Observer is stable. Max eigenvalue magnitude:", np.max(np.abs(eigvals)))
+
+
+
 
 
 
@@ -314,22 +312,31 @@ y_cnt = 0
 
 
 
+fin = False
 
+d_est_now = np.ones(12) * 0.1
 
-d_est_now = np.zeros(3) 
+z_t = np.zeros((N+1,13))
 
-
+z_hat[0, :12] = x0 
 if disturbances:
     # dk = np.random.normal(0, 0.05, size=12)
-    dk = np.zeros(12) 
-    dk[2] = 1e-3
+    dk = np.zeros((12,1))
+    dk[0] = 0.0
+    dk[1] = 0.0
+    dk[2] = 0.1
+    dk[3] = 0.0
+    dk[4] = 0.0
+    dk[5] = 0.0
 else:
     dk = np.zeros(12)
 
 for t in tqdm(range(N_sim), desc="Simulating MPC"):
     if t % 50 == 0 and t > 0:
         y_cnt += 1
-    
+
+
+        
 
     y_cnt = y_cnt % len(y_ref)
 
@@ -341,42 +348,57 @@ for t in tqdm(range(N_sim), desc="Simulating MPC"):
 
     if current_horizon <= 0:
         print("Reached the end of the reference trajectory.")
+        fin = True
         break
 
     if disturbances:
-        x = x_hat[t, :]
+        x = x_hist[t, :]
     else:
         x = x_hist[t, :]
 
     if disturbances:
-        d_est_now = np.array([0, 0, d_hat[t, 0]])  # use only z-disturbance
+        d_est_now= d_hat[t]
     else:
-        d_est_now = np.zeros(3)
+        d_est_now = np.zeros(12)
+
+    
+    if debug:
+        print(f"d_est_now[:6] = {d_est_now[:6]}")
 
     u_0, x_1, x_traj, u_seq = mpc(Ad, Bd, current_horizon, x, x_ref_horizon, u_ref_horizon, y_ref[y_cnt], Q, R, Pl, dim_x, dim_u, d_est_now,upper_bounds,lower_bounds)
+    #u_0 = np.zeros(4)
+
     u_hist[t, :] = u_0
+
+
+
     if u_0 is None:
         print(f"❌ Solver failed at timestep {t}")
         break
-
-    if disturbances:
-        # True next state (simulate plant)
-        x_hist[t + 1, :] = Ad @ x_hat[t, :] + Bd @ u_0 + dk
-        x_hist[t+1,2] = x_hist[t+1,2] + np.random.normal(0,0.1) 
-        y_k = x_hist[t + 1, 0:6]  # only position is measured (x, y, z)
-
-        tilde_x_hat = np.hstack([x_hat[t], d_hat[t]])
-        y_hat = C_aug @ tilde_x_hat
-
-        tilde_x_hat = A_aug @ tilde_x_hat + B_aug @ u_0 + L_aug @ (y_k - y_hat)
-
-        x_hat[t + 1] = tilde_x_hat[:12] 
-        d_hat[t + 1] = tilde_x_hat[12:]
-
-
     else:
-        # No disturbance/observer, use true state evolution
-        x_hist[t + 1, :] = Ad @ x_hist[t, :] + Bd @ u_0
+        if disturbances and fin == False:
+            dk = np.zeros((12,1))
+            dk[2] = 0.1
+
+            # Simulated disturbance
+            x_hist[t + 1, :] = Ad @ x_hist[t, :] + Bd @ u_0 
+            y_meas = (C @ x_hist[t, :].reshape(-1, 1)).flatten() + dk.flatten() 
+
+            # Update disturbance estimate using Luenberger observer
+            residual = y_meas.reshape(-1, 1) - (C @ x_hist[t, :]).reshape(-1, 1) - d_hat[t, :].reshape(-1, 1)
+            d_hat[t + 1, :] = d_hat[t, :] + (L_d @ residual).flatten()  
+            # Since x is fully measured, set x_hat directly
+            #x_hat[t + 1] = Ad @ x_hat[t] + Bd @ u_0
+
+            
+            if debug:
+                print("d_hat: " , d_hat[t])
+
+
+
+        else:
+            # No disturbance/observer, use true state evolution
+            x_hist[t + 1, :] = Ad @ x_hist[t, :] + Bd @ u_0
 
 
 
@@ -386,11 +408,6 @@ y_pos = x_hist[:, 1]
 z_pos = x_hist[:, 2]
 yaw = x_hist[:,5]
 
-os.makedirs("plot_data", exist_ok=True)
-np.save("plot_data/x_R_20.npy", x_pos)
-np.save("plot_data/y_R_20.npy", y_pos)
-np.save("plot_data/z_R_20.npy",z_pos)
-np.save("plot_data/yaw_R_20.npy",yaw)
 
 
 if disturbances:
@@ -549,19 +566,8 @@ plt.show()
 
 
 if disturbances:
-    # Plot estimation error for z state (state index 2)
-    state_error_z = x_hist[:N_sim, 2] - x_hat[:N_sim, 2]
-    plt.figure()
-    plt.plot(state_error_z, label="State z error", color='blue')
-    plt.legend()
-    plt.title("State Estimation Error (z)")
-    plt.xlabel("Timestep")
-    plt.ylabel("Error")
-    plt.grid(True)
-    plt.show()
-
     # Plot estimated vs true disturbance for z state (state index 2)
-    disturbance_est_z = [x_hist[t + 1, 2] - x_hat[t + 1, 2] for t in range(N_sim - 1)]
+    disturbance_est_z = d_hat[:,2]
     plt.figure()
     plt.plot(disturbance_est_z, label="Estimated disturbance z", color='red')
     plt.axhline(dk[2], linestyle='--', color='gray', label="True disturbance z")

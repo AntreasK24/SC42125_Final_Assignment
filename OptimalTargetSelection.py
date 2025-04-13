@@ -66,10 +66,14 @@ class OptimalTargetSelection:
             cost = 0
             constraints = []
 
+            yref_full = np.zeros(12)
+            yref_full[:6] = yref  # fill in known values
+
             for k in range(N-1):
+
                 cost += cp.quad_form(xr[k], self.Q) + cp.quad_form(ur[k], self.R)
                 constraints += [xr[k+1] == self.Ad @ xr[k] + self.Bd @ ur[k]]
-                constraints += [self.C @ xr[k] == yref]
+                constraints += [self.C @ xr[k] == yref_full]
                 constraints += [ur[k][0] >= self.m * (-9.81)]
             cost += cp.quad_form(xr[N-1], self.Q)
 
@@ -102,21 +106,33 @@ class OptimalTargetSelection:
 
         cost = 0
         constraints = []
+        yref = np.concatenate([yref, np.zeros(6)])
 
         
 
-        for k in range(N-1):
-            
+        for k in range(N - 1):
+            A_aug = np.block([
+                [np.eye(12) - self.Ad, -self.Bd],
+                [self.C,               np.zeros((12, 4))]
+            ])
+
+            xu = cp.vstack([cp.reshape(xr[k, :], (12, 1)), cp.reshape(ur[k, :], (4, 1))])
+            # Apply disturbance correction
+            rhs = np.vstack([
+                np.zeros((12, 1)),
+                (yref.reshape(-1, 1) - d.reshape(-1, 1))  # ← yref - d̂
+            ])
+
+            # Slack variable for softening the output constraint
+            eps = cp.Variable((12, 1))  # same shape as C @ x - d
+
+            constraints += [A_aug @ xu == rhs + cp.vstack([np.zeros((12, 1)), eps])]
+            cost += cp.quad_form(eps, np.eye(12)) * 1e4  # penalty weight, tune as needed
+
             cost += cp.quad_form(xr[k], self.Q) + cp.quad_form(ur[k], self.R)
-            constraints += [xr[k+1] == self.Ad @ xr[k] + self.Bd @ ur[k]]
-            #constraints += [self.C @ xr[k] == (yref - d)]
-            epsilon = cp.Variable(3)
-            constraints += [self.C[:3, :] @ xr[k] + epsilon == yref[:3] - d[:3]]
-            cost += cp.quad_form(epsilon, np.eye(3) * 1000)  # penalize deviation
-            #constraints += [ur[k][0] >= self.m * (-9.81)]
 
         cost += cp.quad_form(xr[N-1], self.Q)
-
+        
         problem = cp.Problem(cp.Minimize(cost), constraints)
         if self.debug:
             print("📌 yref[:3] =", yref[:3])
