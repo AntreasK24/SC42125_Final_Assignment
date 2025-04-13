@@ -106,7 +106,7 @@ def mpc(A, B, N, x0, x_ref, u_ref,yref, Q, R, P,dim_x,dim_u,d,upper_bounds,lower
         cost += cp.quad_form(x[:, k] - x_ref[k, :], Q)
         cost += cp.quad_form(u[:, k] - u_ref[k, :], R)
         constraints += [x[:, k + 1] == A @ x[:, k] + B @ u[:, k]]
-        #constraints += [u[0, k] >= m * (-9.81)]
+        constraints += [u[0, k] >= m * (-9.81)]
 
         if k>0:
             for i in range(12):
@@ -279,8 +279,8 @@ if disturbances:
     d_hat[0] = 0.0  #
 
     B_d = np.zeros((12, 1))
-    B_d[2, 0] = 1.0  # Disturbance only affects z
-  # or model the actual way disturbances affect states
+    B_d[2, 0] = 1.0  
+
     A_damp = 1.0
     A_dist = np.block([
         [Ad, B_d],
@@ -320,7 +320,6 @@ z_t = np.zeros((N+1,13))
 
 z_hat[0, :12] = x0 
 if disturbances:
-    # dk = np.random.normal(0, 0.05, size=12)
     dk = np.zeros((12,1))
     dk[0] = 0.0
     dk[1] = 0.0
@@ -366,7 +365,7 @@ for t in tqdm(range(N_sim), desc="Simulating MPC"):
         print(f"d_est_now[:6] = {d_est_now[:6]}")
 
     u_0, x_1, x_traj, u_seq = mpc(Ad, Bd, current_horizon, x, x_ref_horizon, u_ref_horizon, y_ref[y_cnt], Q, R, Pl, dim_x, dim_u, d_est_now,upper_bounds,lower_bounds)
-    #u_0 = np.zeros(4)
+
 
     u_hist[t, :] = u_0
 
@@ -384,12 +383,8 @@ for t in tqdm(range(N_sim), desc="Simulating MPC"):
             x_hist[t + 1, :] = Ad @ x_hist[t, :] + Bd @ u_0 
             y_meas = (C @ x_hist[t, :].reshape(-1, 1)).flatten() + dk.flatten() + np.random.normal(0,0.05)
             y_meas_hist.append(y_meas)
-
-            # Update disturbance estimate using Luenberger observer
             residual = y_meas.reshape(-1, 1) - (C @ x_hist[t, :]).reshape(-1, 1) - d_hat[t, :].reshape(-1, 1)
             d_hat[t + 1, :] = d_hat[t, :] + (L_d @ residual).flatten()  
-            # Since x is fully measured, set x_hat directly
-            #x_hat[t + 1] = Ad @ x_hat[t] + Bd @ u_0
 
             
             if debug:
@@ -398,7 +393,6 @@ for t in tqdm(range(N_sim), desc="Simulating MPC"):
 
 
         else:
-            # No disturbance/observer, use true state evolution
             x_hist[t + 1, :] = Ad @ x_hist[t, :] + Bd @ u_0
 
 
@@ -418,7 +412,6 @@ if disturbances:
     ax.plot(x_hist[:, 0][:-1], x_hist[:, 1][:-1], x_hist[:, 2][:-1], label="Actual Trajectory", color='b')
     ax.plot(y_meas_hist[:, 0][:-1], y_meas_hist[:, 1][:-1], y_meas_hist[:, 2][:-1], label="Measured Trajectory", color='r')
 
-    # Plot y_ref waypoints
     ax.plot(y_ref[:, 0], y_ref[:, 1], y_ref[:, 2], 'o', color='orange', markersize=10, label='Waypoints (y_ref)')
 
     ax.set_xlabel('X Position [m]')
@@ -432,7 +425,6 @@ else:
 
     ax.plot(x_pos[:-1], y_pos[:-1], z_pos[:-1], label="Trajectory", color="b")
 
-    # Plot y_ref waypoints
     ax.plot(y_ref[:, 0], y_ref[:, 1], y_ref[:, 2], 'o', color='orange', markersize=10, label='Waypoints (y_ref)')
 
     ax.set_xlabel('X Position [m]')

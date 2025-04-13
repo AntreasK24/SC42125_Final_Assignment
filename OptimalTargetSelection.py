@@ -67,7 +67,7 @@ class OptimalTargetSelection:
             constraints = []
 
             yref_full = np.zeros(12)
-            yref_full[:6] = yref  # fill in known values
+            yref_full[:6] = yref  
 
             for k in range(N-1):
 
@@ -120,14 +120,13 @@ class OptimalTargetSelection:
             # Apply disturbance correction
             rhs = np.vstack([
                 np.zeros((12, 1)),
-                (yref.reshape(-1, 1) - d.reshape(-1, 1))  # ← yref - d̂
+                (yref.reshape(-1, 1) - d.reshape(-1, 1))  
             ])
 
-            # Slack variable for softening the output constraint
-            eps = cp.Variable((12, 1))  # same shape as C @ x - d
+            eps = cp.Variable((12, 1))  
 
             constraints += [A_aug @ xu == rhs + cp.vstack([np.zeros((12, 1)), eps])]
-            cost += cp.quad_form(eps, np.eye(12)) * 1e4  # penalty weight, tune as needed
+            cost += cp.quad_form(eps, np.eye(12)) * 1e4  
 
             cost += cp.quad_form(xr[k], self.Q) + cp.quad_form(ur[k], self.R)
 
@@ -147,7 +146,6 @@ class OptimalTargetSelection:
         theta = np.linspace(0, 2*np.pi, 20)
         yrefs = [np.array([radius * np.cos(t), radius * np.sin(t), 5]) for t in theta]
         
-        # Append [0, 0, 0] to each vector
         yrefs = [np.concatenate((yref, [0, 0, 0])) for yref in yrefs]
         
         return yrefs
@@ -160,7 +158,6 @@ class OptimalTargetSelection:
 
         yrefs = [np.array([x, y, z_constant]) for x, y in zip(x_points, y_points)]
         
-        # Append [0, 0, 0] to each vector
         yrefs = [np.concatenate((yref, [0, 0, 0])) for yref in yrefs]
 
         return yrefs
@@ -173,7 +170,6 @@ class OptimalTargetSelection:
 
         yrefs = [np.array([x, y, z_constant]) for x, y in zip(x_points, y_points)]
         
-        # Append [0, 0, 0] to each vector
         yrefs = [np.concatenate((yref, [0, 0, 0])) for yref in yrefs]
 
         return yrefs
@@ -186,7 +182,6 @@ class OptimalTargetSelection:
 
         yrefs = [np.array([x, y, z_constant]) for x, y in zip(x_points, y_points)]
         
-        # Append [0, 0, 0] to each vector
         yrefs = [np.concatenate((yref, [0, 0, 0])) for yref in yrefs]
 
         return yrefs
@@ -195,7 +190,6 @@ class OptimalTargetSelection:
         theta = np.linspace(0, 2 * np.pi, 30)
         yrefs = [np.array([radius * np.sin(t), radius * np.sin(t) * np.cos(t), 5]) for t in theta]
         
-        # Append [0, 0, 0] to each vector
         yrefs = [np.concatenate((yref, [0, 0, 0])) for yref in yrefs]
 
         return yrefs
