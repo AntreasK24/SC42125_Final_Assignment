@@ -114,7 +114,7 @@ def mpc(A, B, N, x0, x_ref, u_ref,yref, Q, R, P,dim_x,dim_u,d,upper_bounds,lower
 
     constraints += [x[:, 0] == x0]
     # Terminal cost
-    cost += 1*cp.quad_form(x[:, N] - x_ref[N, :], P)
+    cost += 10.5*cp.quad_form(x[:, N] - x_ref[N, :], P)
 
     cost *= 1e-3 
 
@@ -396,6 +396,27 @@ for t in tqdm(range(N_sim), desc="Simulating MPC"):
             x_hist[t + 1, :] = Ad @ x_hist[t, :] + Bd @ u_0
 
 
+diff = []
+neg_stage_costs = []
+lyap_violations = []
+
+for k in range(N_sim):
+    x_k = x_hist[k, :].reshape(-1, 1)
+    x_kp1 = x_hist[k + 1, :].reshape(-1, 1)
+    u_k = u_hist[k, :].reshape(-1, 1)
+
+    V_k = x_k.T @ P @ x_k
+    V_kp1 = x_kp1.T @ P @ x_kp1
+    stage_cost = x_k.T @ Q @ x_k + u_k.T @ R @ u_k
+    tol = 1e-4
+    delta = (V_kp1 - V_k).item()
+    diff.append(delta)
+    neg_stage_costs.append(-stage_cost.item())
+
+    if delta > -stage_cost.item() + tol:
+        lyap_violations.append((k, delta, -stage_cost.item()))
+
+print(f"Violations where ΔV > -ℓ(x,u): {len(lyap_violations)}")
 
 
 x_pos = x_hist[:, 0]
