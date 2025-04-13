@@ -1,0 +1,11 @@
+numpy
+scipy
+matplotlib
+mpl_toolkits
+cvxpy
+tqdm
+PyYAML
+control
+pandas
+qpsolvers
+easygui
