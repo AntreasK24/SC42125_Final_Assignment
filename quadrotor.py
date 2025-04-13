@@ -313,7 +313,7 @@ y_cnt = 0
 
 
 fin = False
-
+y_meas_hist = []
 d_est_now = np.ones(12) * 0.1
 
 z_t = np.zeros((N+1,13))
@@ -382,7 +382,8 @@ for t in tqdm(range(N_sim), desc="Simulating MPC"):
 
             # Simulated disturbance
             x_hist[t + 1, :] = Ad @ x_hist[t, :] + Bd @ u_0 
-            y_meas = (C @ x_hist[t, :].reshape(-1, 1)).flatten() + dk.flatten() 
+            y_meas = (C @ x_hist[t, :].reshape(-1, 1)).flatten() + dk.flatten() + np.random.normal(0,0.05)
+            y_meas_hist.append(y_meas)
 
             # Update disturbance estimate using Luenberger observer
             residual = y_meas.reshape(-1, 1) - (C @ x_hist[t, :]).reshape(-1, 1) - d_hat[t, :].reshape(-1, 1)
@@ -409,29 +410,35 @@ z_pos = x_hist[:, 2]
 yaw = x_hist[:,5]
 
 
-
+y_meas_hist = np.array(y_meas_hist)
 if disturbances:
-
     fig = plt.figure(figsize=(12, 8))
     ax = fig.add_subplot(111, projection='3d')
 
-    ax.plot(x_hist[:, 0][:-1], x_hist[:, 1][:-1], x_hist[:, 2][:-1], label="Actual Trajectory (w/o observer)", color='b')
+    ax.plot(x_hist[:, 0][:-1], x_hist[:, 1][:-1], x_hist[:, 2][:-1], label="Actual Trajectory", color='b')
+    ax.plot(y_meas_hist[:, 0][:-1], y_meas_hist[:, 1][:-1], y_meas_hist[:, 2][:-1], label="Measured Trajectory", color='r')
 
-    ax.plot(x_hat[:, 0][:-1], x_hat[:, 1][:-1], x_hat[:, 2][:-1], label="Estimated Trajectory (w/ observer)", color='r')
+    # Plot y_ref waypoints
+    ax.plot(y_ref[:, 0], y_ref[:, 1], y_ref[:, 2], 'o', color='orange', markersize=10, label='Waypoints (y_ref)')
 
-    ax.set_xlabel('X Position')
-    ax.set_ylabel('Y Position')
-    ax.set_zlabel('Z Position')
-    ax.set_title('3D Trajectory Comparison: Actual vs Estimated')
-
+    ax.set_xlabel('X Position [m]')
+    ax.set_ylabel('Y Position [m]')
+    ax.set_zlabel('Z Position [m]')
     ax.legend()
-
     plt.show()
 else:
     fig = plt.figure()
     ax = fig.add_subplot(111, projection="3d")
 
     ax.plot(x_pos[:-1], y_pos[:-1], z_pos[:-1], label="Trajectory", color="b")
+
+    # Plot y_ref waypoints
+    ax.plot(y_ref[:, 0], y_ref[:, 1], y_ref[:, 2], 'o', color='orange', markersize=10, label='Waypoints (y_ref)')
+
+    ax.set_xlabel('X Position [m]')
+    ax.set_ylabel('Y Position [m]')
+    ax.set_zlabel('Z Position [m]')
+    ax.legend()
 
 
 # Add orientation vectors
@@ -463,43 +470,43 @@ for i in range(0, x_hist.shape[0], 3):  # Every third step
     y_body = R[1, :]  # y-axis
     z_body = R[2, :]  # z-axis
 
-    # Plot the orientation vectors
-    ax.quiver(
-        x_pos[i],
-        y_pos[i],
-        z_pos[i],  # Starting point
-        x_body[0],
-        x_body[1],
-        x_body[2],
-        color="r",
-        length=0.5,
-        normalize=True,
-        label="x-body" if i == 0 else "",
-    )
-    ax.quiver(
-        x_pos[i],
-        y_pos[i],
-        z_pos[i],  # Starting point
-        y_body[0],
-        y_body[1],
-        y_body[2],
-        color="g",
-        length=0.5,
-        normalize=True,
-        label="y-body" if i == 0 else "",
-    )
-    ax.quiver(
-        x_pos[i],
-        y_pos[i],
-        z_pos[i],  # Starting point
-        z_body[0],
-        z_body[1],
-        z_body[2],
-        color="b",
-        length=0.5,
-        normalize=True,
-        label="z-body" if i == 0 else "",
-    )
+    # # Plot the orientation vectors
+    # ax.quiver(
+    #     x_pos[i],
+    #     y_pos[i],
+    #     z_pos[i],  # Starting point
+    #     x_body[0],
+    #     x_body[1],
+    #     x_body[2],
+    #     color="r",
+    #     length=0.5,
+    #     normalize=True,
+    #     label="x-body" if i == 0 else "",
+    # )
+    # ax.quiver(
+    #     x_pos[i],
+    #     y_pos[i],
+    #     z_pos[i],  # Starting point
+    #     y_body[0],
+    #     y_body[1],
+    #     y_body[2],
+    #     color="g",
+    #     length=0.5,
+    #     normalize=True,
+    #     label="y-body" if i == 0 else "",
+    # )
+    # ax.quiver(
+    #     x_pos[i],
+    #     y_pos[i],
+    #     z_pos[i],  # Starting point
+    #     z_body[0],
+    #     z_body[1],
+    #     z_body[2],
+    #     color="b",
+    #     length=0.5,
+    #     normalize=True,
+    #     label="z-body" if i == 0 else "",
+    # )
 
 # Set equal scaling for all axes
 max_range = (
@@ -535,39 +542,66 @@ plt.plot(x_hist[:, 0][:-1], label="x")
 plt.plot(x_hist[:, 1][:-1], label="y")
 plt.plot(x_hist[:, 2][:-1], label="z")
 plt.legend()
+plt.xlabel("Time step")
+plt.ylabel("Position [m]")
+plt.grid()
 plt.show()
 
 plt.plot(x_hist[:, 3][:-1], label="roll")
 plt.plot(x_hist[:, 4][:-1], label="pitch")
 plt.plot(x_hist[:, 5][:-1], label="yaw")
 plt.legend()
+plt.legend()
+plt.xlabel("Time step")
+plt.ylabel("Orientation [rad]")
+plt.grid()
 plt.show()
 
 plt.plot(x_hist[:, 6], label="vx")
 plt.plot(x_hist[:, 7], label="vy")
 plt.plot(x_hist[:, 8], label="vz")
 plt.legend()
+plt.xlabel("Time step")
+plt.ylabel("Velocity [m/s]")
+plt.grid()
+plt.legend()
 plt.show()
 
-plt.plot(x_hist[:, 9], label="omega x")
-plt.plot(x_hist[:, 10], label="omega y")
-plt.plot(x_hist[:, 11], label="omega z")
+plt.plot(x_hist[:, 9], label="ωx")
+plt.plot(x_hist[:, 10], label="ωy")
+plt.plot(x_hist[:, 11], label="ωz")
+plt.legend()
+plt.xlabel("Time step")
+plt.ylabel("Angular Velocity [rad/s]")
+plt.grid()
 plt.legend()
 plt.show()
 
 # Plot the control inputs
-plt.plot(u_hist[:, 0], label="u1")
-plt.plot(u_hist[:, 1], label="u2")
-plt.plot(u_hist[:, 2], label="u3")
-plt.plot(u_hist[:, 3], label="u4")
+fig, axs = plt.subplots(2, 1, figsize=(10, 6), sharex=True)
 
-plt.legend()
+# Lift Force subplot
+axs[0].plot(u_hist[:, 0], label="Lift Force", color='C0')
+axs[0].set_ylabel("Force [N]")
+axs[0].legend()
+axs[0].grid(True)
+
+# Moments subplot
+axs[1].plot(u_hist[:, 1], label="Roll Moment", color='C1')
+axs[1].plot(u_hist[:, 2], label="Pitch Moment", color='C2')
+axs[1].plot(u_hist[:, 3], label="Yaw Moment", color='C3')
+axs[1].set_ylabel("Moment [Nm]")
+axs[1].set_xlabel("Timestep")
+axs[1].legend()
+axs[1].grid(True)
+
+plt.tight_layout()
 plt.show()
 
 
 if disturbances:
     # Plot estimated vs true disturbance for z state (state index 2)
-    disturbance_est_z = d_hat[:,2]
+    disturbance_est_z = d_hat[:,2][:-1]
     plt.figure()
     plt.plot(disturbance_est_z, label="Estimated disturbance z", color='red')
     plt.axhline(dk[2], linestyle='--', color='gray', label="True disturbance z")
